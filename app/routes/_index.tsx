@@ -1,9 +1,8 @@
 // app/routes/index.jsx
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { json } from '@remix-run/node';
 import { useLoaderData, Form } from '@remix-run/react';
-import Airtable from 'airtable';
 
 async function fetchBases(apiKey) {
   const response = await fetch('https://api.airtable.com/v0/meta/bases', {
@@ -41,20 +40,34 @@ export default function Index() {
   const [selectedBase1, setSelectedBase1] = useState('');
   const [selectedBase2, setSelectedBase2] = useState('');
   const [comparisonResult, setComparisonResult] = useState(null);
+  const [compareError, setCompareError] = useState(null);
 
   const compareSchemas = async () => {
-    const response = await fetch('/api/compare-schemas', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base1: selectedBase1, base2: selectedBase2 }),
-    });
-    const result = await response.json();
-    setComparisonResult(result);
+    try {
+      const response = await fetch('/api/compare-schemas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base1: selectedBase1, base2: selectedBase2 }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to compare schemas');
+      }
+      const result = await response.json();
+      setComparisonResult(result);
+      setCompareError(null);
+    } catch (error) {
+      console.error('Error comparing schemas:', error);
+      setCompareError(error.message || 'Failed to compare schemas. Please try again.');
+      setComparisonResult(null);
+    }
   };
 
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Airtable Schema Comparison</h1>
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      {compareError && <p className="text-red-500 mb-4">{compareError}</p>}
       <Form onSubmit={(e) => { e.preventDefault(); compareSchemas(); }}>
         <div className="mb-4">
           <label htmlFor="base1" className="block mb-2">Select Base 1:</label>
@@ -84,16 +97,69 @@ export default function Index() {
             ))}
           </select>
         </div>
-        <button type="submit" className="bg-blue-500 text-white px-4 py-2 rounded">
+        <button 
+          type="submit" 
+          className="bg-blue-500 text-white px-4 py-2 rounded"
+          disabled={!selectedBase1 || !selectedBase2}
+        >
           Compare Schemas
         </button>
       </Form>
       {comparisonResult && (
         <div className="mt-8">
           <h2 className="text-xl font-bold mb-4">Comparison Result:</h2>
-          <pre className="bg-gray-100 p-4 rounded overflow-x-auto">
-            {JSON.stringify(comparisonResult, null, 2)}
-          </pre>
+          <div className="space-y-4">
+            {comparisonResult.tablesToCreate.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold">Tables to Create:</h3>
+                <ul className="list-disc pl-5">
+                  {comparisonResult.tablesToCreate.map((table, index) => (
+                    <li key={index} className="mb-2">
+                      <span className="font-medium">{table.name}</span>
+                      <ul className="list-circle pl-5">
+                        {table.fields.map((field, fieldIndex) => (
+                          <li key={fieldIndex}>
+                            {field.name} ({field.type})
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {comparisonResult.tablesToDelete.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold">Tables to Delete:</h3>
+                <ul className="list-disc pl-5">
+                  {comparisonResult.tablesToDelete.map((table, index) => (
+                    <li key={index}>{table}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {comparisonResult.tablesToUpdate.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold">Tables to Update:</h3>
+                <ul className="list-disc pl-5">
+                  {comparisonResult.tablesToUpdate.map((table, index) => (
+                    <li key={index} className="mb-2">
+                      <span className="font-medium">{table.name}</span>
+                      <ul className="list-circle pl-5">
+                        {table.changes.map((change, changeIndex) => (
+                          <li key={changeIndex}>
+                            {change.action} field: {change.field}
+                            {change.type && ` (${change.type})`}
+                            {change.newType && ` to ${change.newType}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

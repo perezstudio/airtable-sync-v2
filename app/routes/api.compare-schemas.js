@@ -86,9 +86,15 @@ export const action = async ({ request }) => {
         }
       }
 
-      for (const tableName of schema2Tables.keys()) {
+      for (const [tableName, table] of schema2Tables) {
         if (!schema1Tables.has(tableName)) {
-          result.tablesToCreate.push(tableName);
+          result.tablesToCreate.push({
+            name: tableName,
+            fields: table.fields.map(field => ({
+              name: field.name,
+              type: field.type
+            }))
+          });
         }
       }
 
